@@ -1,0 +1,67 @@
+# ============================
+# appgestaoti-ChromeNode / Dockerfile.prod
+# ============================
+
+FROM selenium/node-chrome:latest
+
+# --- Args vindos do CI (sem hard-code no repo) ---
+ARG VNC_PASSWORD="changeme"
+
+# Etapa root para configurar perfil, antivnc, antifingerprint
+USER root
+
+# Instala utilitários necessários e limpa cache do apt
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  curl unzip x11vnc \
+  && rm -rf /var/lib/apt/lists/*
+
+# Cria diretório de perfil do Chrome e copia perfil custom (se existir)
+RUN mkdir -p /home/seluser/chrome-profile/Default
+COPY chrome-profile/Default /home/seluser/chrome-profile/Default
+
+# Gera senha do VNC (camada não expõe o valor no repo; use secret no CI)
+RUN mkdir -p /home/seluser/.vnc \
+  && x11vnc -storepasswd "${VNC_PASSWORD}" /home/seluser/.vnc/passwd \
+  && chown -R seluser:seluser /home/seluser/.vnc \
+  && chmod 600 /home/seluser/.vnc/passwd
+
+# Corrige permissões do perfil
+RUN chown -R seluser:seluser /home/seluser/chrome-profile
+
+# Retorna ao usuário padrão da imagem Selenium
+USER seluser
+
+# Variáveis do Selenium Node (iguais às suas)
+ENV SE_NODE_OVERRIDE_MAX_SESSIONS=true
+ENV SE_NODE_MAX_SESSIONS=1
+ENV SE_NODE_SESSION_TIMEOUT=300
+
+# Configurações antifingerprint para o Chrome (iguais às suas)
+ENV CHROME_OPTIONS="\
+  --user-data-dir=/home/seluser/chrome-profile \
+  --profile-directory=Default \
+  --no-sandbox \
+  --disable-dev-shm-usage \
+  --disable-blink-features=AutomationControlled \
+  --disable-extensions \
+  --disable-infobars \
+  --disable-popup-blocking \
+  --disable-background-networking \
+  --disable-default-apps \
+  --disable-sync \
+  --disable-translate \
+  --mute-audio \
+  --start-maximized \
+  --disable-web-security \
+  --ignore-certificate-errors \
+  --ignore-ssl-errors \
+  --disable-features=IsolateOrigins,site-per-process \
+  --blink-settings=imagesEnabled=false"
+
+# Portas padrão do node + VNC web
+EXPOSE 5555 7900
+
+# Labels úteis p/ rastreio na GHCR
+LABEL org.opencontainers.image.source="https://github.com/devrafaelrabelo/appgestaoti-ChromeNode" \
+  org.opencontainers.image.description="Chrome Node para Selenium Grid com perfil custom e VNC" \
+  org.opencontainers.image.licenses="Proprietary"
